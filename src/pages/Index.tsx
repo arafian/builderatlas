@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import BuilderCard from "@/components/BuilderCard";
 import AddBuilderDialog from "@/components/AddBuilderDialog";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpDown, GitCommit, RefreshCw } from "lucide-react";
+import { ArrowUpDown, GitCommit, RefreshCw, Search } from "lucide-react";
 import { AVAILABLE_TAGS } from "@/types/builder";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ const Index = () => {
   const [sortMode, setSortMode] = useState<SortMode>("commits");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
 
   const fetchBuilders = async () => {
     const { data, error } = await supabase.from("builders").select("*");
@@ -64,6 +65,29 @@ const Index = () => {
       toast.error("Failed to refresh commit data");
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const discoverBuilders = async () => {
+    setDiscovering(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("discover-builders");
+
+      if (error) {
+        toast.error("Failed to discover builders");
+        return;
+      }
+
+      if (data?.inserted_count > 0) {
+        toast.success(`Discovered ${data.inserted_count} new active builders!`);
+        fetchBuilders(); // reload the list
+      } else {
+        toast.info("No new active builders found right now.");
+      }
+    } catch {
+      toast.error("Failed to discover builders");
+    } finally {
+      setDiscovering(false);
     }
   };
 
@@ -123,12 +147,20 @@ const Index = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={discoverBuilders}
+              disabled={discovering}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:opacity-50"
+            >
+              <Search className={`h-3.5 w-3.5 ${discovering ? "animate-pulse" : ""}`} />
+              {discovering ? "Discovering…" : "Discover"}
+            </button>
+            <button
               onClick={refreshCommits}
               disabled={refreshing}
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:opacity-50"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-              {refreshing ? "Refreshing…" : "Refresh Commits"}
+              {refreshing ? "Refreshing…" : "Refresh"}
             </button>
             <AddBuilderDialog onAdd={handleAdd} />
           </div>

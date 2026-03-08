@@ -3,6 +3,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+function githubHeaders() {
+  const token = Deno.env.get('BUILDER_ATLAS_PERSONAL_ACCESS_TOKEN');
+  const h: Record<string, string> = {
+    'Accept': 'application/vnd.github.v3+json',
+    'User-Agent': 'BuilderAtlas',
+  };
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
+
 function extractUsername(githubUrl: string): string | null {
   try {
     const url = new URL(githubUrl);
@@ -28,6 +38,7 @@ Deno.serve(async (req) => {
       );
     }
 
+    const gh = githubHeaders();
     const results: { id: string; commits_per_week: number }[] = [];
 
     for (const builder of builders) {
@@ -38,15 +49,9 @@ Deno.serve(async (req) => {
       }
 
       try {
-        // Fetch public events for the user
         const response = await fetch(
           `https://api.github.com/users/${username}/events/public?per_page=100`,
-          {
-            headers: {
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'BuilderAtlas',
-            },
-          }
+          { headers: gh }
         );
 
         if (!response.ok) {

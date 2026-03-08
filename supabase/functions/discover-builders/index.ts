@@ -3,79 +3,75 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+function githubHeaders() {
+  const token = Deno.env.get('BUILDER_ATLAS_PERSONAL_ACCESS_TOKEN');
+  const h: Record<string, string> = {
+    'Accept': 'application/vnd.github.v3+json',
+    'User-Agent': 'BuilderAtlas',
+  };
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Use public events API - no auth needed, higher rate limit
+    const gh = githubHeaders();
     const commitCounts: Record<string, { username: string; commits: number }> = {};
 
-    for (let page = 1; page <= 10; page++) {
+    // Fetch public events (with auth we get 5000 req/hour)
+    // GitHub only allows pages 1-3 for /events (max 300 events)
+    for (let page = 1; page <= 3; page++) {
       const res = await fetch(
         `https://api.github.com/events?per_page=100&page=${page}`,
-        {
-          headers: {
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'BuilderAtlas',
-          },
-        }
+        { headers: gh }
       );
       if (!res.ok) {
-        console.error(`Events API page ${page}: ${res.status}`);
+        console.error(`Events API page ${page}: ${res.status} - ${await res.text()}`);
         break;
       }
       const events = await res.json();
       if (!events.length) break;
 
-      for (const event of events) {
-        if (event.type !== 'PushEvent') continue;
+      const pushEvents = events.filter((e: any) => e.type === 'PushEvent');
+      console.log(`Page ${page}: ${events.length} events, ${pushEvents.length} PushEvents`);
+      if (pushEvents.length > 0) {
+        console.log(`Sample PushEvent actors: ${pushEvents.slice(0, 5).map((e: any) => `${e.actor?.login}(size=${e.payload?.size},commits=${e.payload?.commits?.length},distinct=${e.payload?.distinct_size})`).join(', ')}`);
+      }
 
+      for (const event of pushEvents) {
         const username = event.actor?.login;
         if (!username || username.includes('[bot]') || username.endsWith('-bot')) continue;
-
-        const numCommits = event.payload?.size || event.payload?.commits?.length || 0;
-        if (numCommits === 0) continue;
 
         if (!commitCounts[username]) {
           commitCounts[username] = { username, commits: 0 };
         }
-        commitCounts[username].commits += numCommits;
+        commitCounts[username].commits += 1; // count push events, refine later
       }
     }
 
     console.log(`Found ${Object.keys(commitCounts).length} unique committers`);
 
-    // Sort by commits and take top 5
-    const topUsers = Object.values(commitCounts)
+    // Sort and take top 5
+    let topUsers = Object.values(commitCounts)
       .sort((a, b) => b.commits - a.commits)
       .slice(0, 5);
 
-    console.log('Top users:', JSON.stringify(topUsers));
+    console.log('Top from events:', JSON.stringify(topUsers));
 
-    if (topUsers.length === 0) {
-      return new Response(
-        JSON.stringify({ success: true, top_users: [], inserted_count: 0 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // For each top user, get their real weekly commit count from their profile events
+    // For each user, get their full weekly commit count
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     for (const user of topUsers) {
       try {
         const eventsRes = await fetch(
           `https://api.github.com/users/${user.username}/events/public?per_page=100`,
-          {
-            headers: {
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'BuilderAtlas',
-            },
-          }
+          { headers: gh }
         );
         if (eventsRes.ok) {
           const events = await eventsRes.json();
-          const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
           let realCommits = 0;
           for (const event of events) {
             if (event.type === 'PushEvent' && new Date(event.created_at) >= oneWeekAgo) {
@@ -84,15 +80,23 @@ Deno.serve(async (req) => {
           }
           user.commits = Math.max(user.commits, realCommits);
         }
-      } catch { /* keep original count */ }
+      } catch { /* keep original */ }
     }
 
     topUsers.sort((a, b) => b.commits - a.commits);
+    console.log('Final top users:', JSON.stringify(topUsers));
+
+    if (topUsers.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, top_users: [], inserted_count: 0, message: 'No PushEvents found in recent public timeline' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Insert into database
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const headers = {
+    const dbHeaders = {
       'Authorization': `Bearer ${supabaseKey}`,
       'apikey': supabaseKey,
       'Content-Type': 'application/json',
@@ -102,14 +106,14 @@ Deno.serve(async (req) => {
     for (const user of topUsers) {
       const checkRes = await fetch(
         `${supabaseUrl}/rest/v1/builders?github_url=eq.https://github.com/${user.username}&select=id`,
-        { headers }
+        { headers: dbHeaders }
       );
       const existing = await checkRes.json();
 
       if (existing.length > 0) {
         await fetch(`${supabaseUrl}/rest/v1/builders?id=eq.${existing[0].id}`, {
           method: 'PATCH',
-          headers: { ...headers, 'Prefer': 'return=minimal' },
+          headers: { ...dbHeaders, 'Prefer': 'return=minimal' },
           body: JSON.stringify({
             commits_per_week: user.commits,
             commits_updated_at: new Date().toISOString(),
@@ -120,7 +124,7 @@ Deno.serve(async (req) => {
 
       const insertRes = await fetch(`${supabaseUrl}/rest/v1/builders`, {
         method: 'POST',
-        headers: { ...headers, 'Prefer': 'return=representation' },
+        headers: { ...dbHeaders, 'Prefer': 'return=representation' },
         body: JSON.stringify({
           name: user.username,
           github_url: `https://github.com/${user.username}`,
