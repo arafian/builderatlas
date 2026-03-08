@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
       for (const item of data.items) {
         const username = item.author?.login;
         if (!username) continue;
-        if (username.includes('[bot]') || username.endsWith('-bot') || username.includes('bot')) continue;
+        if (username.includes('[bot]') || username.endsWith('-bot') || username === 'dependabot' || username === 'renovate') continue;
 
         if (!commitCounts[username]) {
           commitCounts[username] = { username, commits: 0 };
