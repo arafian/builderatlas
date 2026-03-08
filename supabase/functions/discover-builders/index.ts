@@ -36,11 +36,13 @@ Deno.serve(async (req) => {
       const events = await res.json();
       if (!events.length) break;
 
-      console.log(`Page ${page}: ${events.length} events, types: ${[...new Set(events.map((e: any) => e.type))].join(', ')}`);
+      const pushEvents = events.filter((e: any) => e.type === 'PushEvent');
+      console.log(`Page ${page}: ${events.length} events, ${pushEvents.length} PushEvents`);
+      if (pushEvents.length > 0) {
+        console.log(`Sample PushEvent actors: ${pushEvents.slice(0, 5).map((e: any) => `${e.actor?.login}(${e.payload?.size || e.payload?.commits?.length || 0})`).join(', ')}`);
+      }
 
-      for (const event of events) {
-        if (event.type !== 'PushEvent') continue;
-
+      for (const event of pushEvents) {
         const username = event.actor?.login;
         if (!username || username.includes('[bot]') || username.endsWith('-bot')) continue;
 
