@@ -9,60 +9,59 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const dateStr = oneWeekAgo.toISOString().split('T')[0];
-
-    // Use GitHub Search Commits API to find recent commits
-    // Search across popular repos to find active committers
+    // Use public events API - no auth needed, higher rate limit
     const commitCounts: Record<string, { username: string; commits: number }> = {};
 
-    // Fetch a few pages of recent commits
-    for (let page = 1; page <= 5; page++) {
+    for (let page = 1; page <= 10; page++) {
       const res = await fetch(
-        `https://api.github.com/search/commits?q=committer-date:>${dateStr}&sort=committer-date&order=desc&per_page=100&page=${page}`,
+        `https://api.github.com/events?per_page=100&page=${page}`,
         {
           headers: {
-            'Accept': 'application/vnd.github.cloak-preview+json',
+            'Accept': 'application/vnd.github.v3+json',
             'User-Agent': 'BuilderAtlas',
           },
         }
       );
-
       if (!res.ok) {
-        console.error(`GitHub search API error: ${res.status} ${await res.text()}`);
+        console.error(`Events API page ${page}: ${res.status}`);
         break;
       }
+      const events = await res.json();
+      if (!events.length) break;
 
-      const data = await res.json();
-      if (!data.items?.length) break;
+      for (const event of events) {
+        if (event.type !== 'PushEvent') continue;
 
-      for (const item of data.items) {
-        const username = item.author?.login;
-        if (!username) continue;
-        if (username.includes('[bot]') || username.endsWith('-bot') || username === 'dependabot' || username === 'renovate') continue;
+        const username = event.actor?.login;
+        if (!username || username.includes('[bot]') || username.endsWith('-bot')) continue;
+
+        const numCommits = event.payload?.size || event.payload?.commits?.length || 0;
+        if (numCommits === 0) continue;
 
         if (!commitCounts[username]) {
           commitCounts[username] = { username, commits: 0 };
         }
-        commitCounts[username].commits += 1;
+        commitCounts[username].commits += numCommits;
       }
     }
+
+    console.log(`Found ${Object.keys(commitCounts).length} unique committers`);
 
     // Sort by commits and take top 5
     const topUsers = Object.values(commitCounts)
       .sort((a, b) => b.commits - a.commits)
       .slice(0, 5);
 
-    console.log('Top users found:', JSON.stringify(topUsers));
+    console.log('Top users:', JSON.stringify(topUsers));
 
     if (topUsers.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, top_users: [], inserted_count: 0, message: 'No active committers found' }),
+        JSON.stringify({ success: true, top_users: [], inserted_count: 0 }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Now fetch real commit counts for each user from their events
+    // For each top user, get their real weekly commit count from their profile events
     for (const user of topUsers) {
       try {
         const eventsRes = await fetch(
@@ -76,50 +75,41 @@ Deno.serve(async (req) => {
         );
         if (eventsRes.ok) {
           const events = await eventsRes.json();
+          const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
           let realCommits = 0;
           for (const event of events) {
             if (event.type === 'PushEvent' && new Date(event.created_at) >= oneWeekAgo) {
-              realCommits += event.payload?.commits?.length || 0;
+              realCommits += event.payload?.size || event.payload?.commits?.length || 0;
             }
           }
-          if (realCommits > user.commits) {
-            user.commits = realCommits;
-          }
+          user.commits = Math.max(user.commits, realCommits);
         }
-      } catch {
-        // keep search count
-      }
+      } catch { /* keep original count */ }
     }
 
-    // Re-sort after getting real counts
     topUsers.sort((a, b) => b.commits - a.commits);
 
     // Insert into database
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const headers = {
+      'Authorization': `Bearer ${supabaseKey}`,
+      'apikey': supabaseKey,
+      'Content-Type': 'application/json',
+    };
 
     const inserted = [];
     for (const user of topUsers) {
-      // Check if already exists
       const checkRes = await fetch(
         `${supabaseUrl}/rest/v1/builders?github_url=eq.https://github.com/${user.username}&select=id`,
-        {
-          headers: {
-            'Authorization': `Bearer ${supabaseKey}`,
-            'apikey': supabaseKey,
-          },
-        }
+        { headers }
       );
       const existing = await checkRes.json();
+
       if (existing.length > 0) {
         await fetch(`${supabaseUrl}/rest/v1/builders?id=eq.${existing[0].id}`, {
           method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${supabaseKey}`,
-            'apikey': supabaseKey,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal',
-          },
+          headers: { ...headers, 'Prefer': 'return=minimal' },
           body: JSON.stringify({
             commits_per_week: user.commits,
             commits_updated_at: new Date().toISOString(),
@@ -130,12 +120,7 @@ Deno.serve(async (req) => {
 
       const insertRes = await fetch(`${supabaseUrl}/rest/v1/builders`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
-          'apikey': supabaseKey,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=representation',
-        },
+        headers: { ...headers, 'Prefer': 'return=representation' },
         body: JSON.stringify({
           name: user.username,
           github_url: `https://github.com/${user.username}`,
