@@ -9,7 +9,7 @@ export const sampleBuilders: Builder[] = [
     description: "Building Neural Canvas — an open-source AI art generation tool with real-time collaboration.",
     tags: ["AI", "Open Source", "Web"],
     dateDiscovered: "2026-03-08",
-    upvotes: 42,
+    commitsPerWeek: 0,
   },
   {
     id: "2",
@@ -19,7 +19,7 @@ export const sampleBuilders: Builder[] = [
     description: "Creator of InfraCTL, a declarative infrastructure orchestration CLI for multi-cloud deployments.",
     tags: ["Infra", "CLI", "DevTools"],
     dateDiscovered: "2026-03-07",
-    upvotes: 38,
+    commitsPerWeek: 0,
   },
   {
     id: "3",
@@ -29,7 +29,7 @@ export const sampleBuilders: Builder[] = [
     description: "Open-source robotic arm firmware with browser-based control interface and ML-powered calibration.",
     tags: ["Robotics", "Open Source"],
     dateDiscovered: "2026-03-06",
-    upvotes: 55,
+    commitsPerWeek: 0,
   },
   {
     id: "4",
@@ -39,7 +39,7 @@ export const sampleBuilders: Builder[] = [
     description: "DataPipe — a lightweight streaming ETL framework designed for real-time analytics pipelines.",
     tags: ["Data", "Infra", "Open Source"],
     dateDiscovered: "2026-03-05",
-    upvotes: 29,
+    commitsPerWeek: 0,
   },
   {
     id: "5",
@@ -49,6 +49,6 @@ export const sampleBuilders: Builder[] = [
     description: "SecureGuard: automated dependency vulnerability scanner with CI/CD integration and Slack alerts.",
     tags: ["Security", "DevTools"],
     dateDiscovered: "2026-03-08",
-    upvotes: 33,
+    commitsPerWeek: 0,
   },
 ];

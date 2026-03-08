@@ -16,6 +16,8 @@ export type Database = {
     Tables: {
       builders: {
         Row: {
+          commits_per_week: number
+          commits_updated_at: string | null
           created_at: string
           date_discovered: string
           description: string | null
@@ -27,6 +29,8 @@ export type Database = {
           upvotes: number
         }
         Insert: {
+          commits_per_week?: number
+          commits_updated_at?: string | null
           created_at?: string
           date_discovered?: string
           description?: string | null
@@ -38,6 +42,8 @@ export type Database = {
           upvotes?: number
         }
         Update: {
+          commits_per_week?: number
+          commits_updated_at?: string | null
           created_at?: string
           date_discovered?: string
           description?: string | null

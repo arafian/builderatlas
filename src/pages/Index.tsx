@@ -4,51 +4,72 @@ import { supabase } from "@/integrations/supabase/client";
 import BuilderCard from "@/components/BuilderCard";
 import AddBuilderDialog from "@/components/AddBuilderDialog";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, GitCommit, RefreshCw } from "lucide-react";
 import { AVAILABLE_TAGS } from "@/types/builder";
 import { toast } from "sonner";
 
-type SortMode = "date" | "upvotes";
+type SortMode = "commits" | "date";
+
+const mapBuilder = (b: any): Builder => ({
+  id: b.id,
+  name: b.name,
+  githubUrl: b.github_url || "",
+  projectUrl: b.project_url || "",
+  description: b.description || "",
+  tags: b.tags || [],
+  dateDiscovered: b.date_discovered,
+  commitsPerWeek: b.commits_per_week || 0,
+});
 
 const Index = () => {
   const [builders, setBuilders] = useState<Builder[]>([]);
-  const [sortMode, setSortMode] = useState<SortMode>("upvotes");
+  const [sortMode, setSortMode] = useState<SortMode>("commits");
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchBuilders = async () => {
-      const { data, error } = await supabase
-        .from("builders")
-        .select("*");
+  const fetchBuilders = async () => {
+    const { data, error } = await supabase.from("builders").select("*");
+    if (error) {
+      toast.error("Failed to load builders");
+      return;
+    }
+    setBuilders((data || []).map(mapBuilder));
+  };
+
+  const refreshCommits = async () => {
+    setRefreshing(true);
+    try {
+      const { data: dbBuilders } = await supabase.from("builders").select("id, github_url");
+      if (!dbBuilders?.length) return;
+
+      const { data, error } = await supabase.functions.invoke("github-commits", {
+        body: { builders: dbBuilders },
+      });
+
       if (error) {
-        toast.error("Failed to load builders");
+        toast.error("Failed to refresh commit data");
         return;
       }
-      setBuilders(
-        (data || []).map((b) => ({
-          id: b.id,
-          name: b.name,
-          githubUrl: b.github_url || "",
-          projectUrl: b.project_url || "",
-          description: b.description || "",
-          tags: b.tags || [],
-          dateDiscovered: b.date_discovered,
-          upvotes: b.upvotes,
-        }))
-      );
-    };
+
+      if (data?.results) {
+        setBuilders((prev) =>
+          prev.map((b) => {
+            const updated = data.results.find((r: any) => r.id === b.id);
+            return updated ? { ...b, commitsPerWeek: updated.commits_per_week } : b;
+          })
+        );
+      }
+      toast.success("Commit data refreshed!");
+    } catch {
+      toast.error("Failed to refresh commit data");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
     fetchBuilders();
   }, []);
-
-  const handleUpvote = async (id: string) => {
-    const builder = builders.find((b) => b.id === id);
-    if (!builder) return;
-    const newUpvotes = builder.upvotes + 1;
-    setBuilders((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, upvotes: newUpvotes } : b))
-    );
-    await supabase.from("builders").update({ upvotes: newUpvotes }).eq("id", id);
-  };
 
   const handleAdd = async (builder: Builder) => {
     const { data, error } = await supabase
@@ -67,19 +88,7 @@ const Index = () => {
       toast.error("Failed to add builder");
       return;
     }
-    setBuilders((prev) => [
-      {
-        id: data.id,
-        name: data.name,
-        githubUrl: data.github_url || "",
-        projectUrl: data.project_url || "",
-        description: data.description || "",
-        tags: data.tags || [],
-        dateDiscovered: data.date_discovered,
-        upvotes: data.upvotes,
-      },
-      ...prev,
-    ]);
+    setBuilders((prev) => [mapBuilder(data), ...prev]);
     toast.success("Builder submitted!");
   };
 
@@ -92,19 +101,18 @@ const Index = () => {
         (a, b) => new Date(b.dateDiscovered).getTime() - new Date(a.dateDiscovered).getTime()
       );
     } else {
-      list = [...list].sort((a, b) => b.upvotes - a.upvotes);
+      list = [...list].sort((a, b) => b.commitsPerWeek - a.commitsPerWeek);
     }
     return list;
   }, [builders, sortMode, activeTag]);
 
   const topThisWeek = useMemo(
-    () => [...builders].sort((a, b) => b.upvotes - a.upvotes).slice(0, 3),
+    () => [...builders].sort((a, b) => b.commitsPerWeek - a.commitsPerWeek).slice(0, 3),
     [builders]
   );
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b border-border">
         <div className="container flex items-center justify-between py-4">
           <div className="flex items-center gap-2.5">
@@ -113,7 +121,17 @@ const Index = () => {
               Builder Atlas
             </h1>
           </div>
-          <AddBuilderDialog onAdd={handleAdd} />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={refreshCommits}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Refreshing…" : "Refresh Commits"}
+            </button>
+            <AddBuilderDialog onAdd={handleAdd} />
+          </div>
         </div>
       </header>
 
@@ -121,7 +139,7 @@ const Index = () => {
         {/* Top Builders This Week */}
         <section className="mb-10">
           <h2 className="mb-4 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            🔥 Top Builders This Week
+            🔥 Most Active Builders This Week
           </h2>
           <div className="grid gap-3 sm:grid-cols-3">
             {topThisWeek.map((builder, i) => (
@@ -140,8 +158,8 @@ const Index = () => {
                       {tag}
                     </Badge>
                   ))}
-                  <span className="ml-auto font-mono text-xs text-primary font-medium">
-                    ▲ {builder.upvotes}
+                  <span className="ml-auto inline-flex items-center gap-1 font-mono text-xs text-primary font-medium">
+                    <GitCommit className="h-3 w-3" /> {builder.commitsPerWeek}/wk
                   </span>
                 </div>
               </div>
@@ -153,11 +171,11 @@ const Index = () => {
         <div className="mb-4 flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => setSortMode(sortMode === "date" ? "upvotes" : "date")}
+              onClick={() => setSortMode(sortMode === "date" ? "commits" : "date")}
               className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
             >
               <ArrowUpDown className="h-3 w-3" />
-              {sortMode === "date" ? "by date" : "by votes"}
+              {sortMode === "date" ? "by date" : "by commits"}
             </button>
           </div>
           <div className="h-4 w-px bg-border" />
@@ -194,7 +212,6 @@ const Index = () => {
                 key={builder.id}
                 builder={builder}
                 index={i + 1}
-                onUpvote={handleUpvote}
               />
             ))
           )}

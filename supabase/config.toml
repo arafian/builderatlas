@@ -1,1 +1,4 @@
 project_id = "wabrrdcscnnnkbekeayg"
+
+[functions.github-commits]
+verify_jwt = false
