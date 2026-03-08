@@ -4,7 +4,7 @@ import { sampleBuilders } from "@/data/sampleBuilders";
 import BuilderCard from "@/components/BuilderCard";
 import AddBuilderDialog from "@/components/AddBuilderDialog";
 import { Badge } from "@/components/ui/badge";
-import { Radar, ArrowUpDown } from "lucide-react";
+import { ArrowUpDown } from "lucide-react";
 import { AVAILABLE_TAGS } from "@/types/builder";
 
 type SortMode = "date" | "upvotes";
@@ -48,9 +48,9 @@ const Index = () => {
       <header className="border-b border-border">
         <div className="container flex items-center justify-between py-4">
           <div className="flex items-center gap-2.5">
-            <Radar className="h-5 w-5 text-primary" />
+            <img src="/favicon.png" alt="Builder Atlas" className="h-5 w-5" />
             <h1 className="font-mono text-lg font-semibold tracking-tight text-foreground">
-              Builder Radar
+              Builder Atlas
             </h1>
           </div>
           <AddBuilderDialog onAdd={handleAdd} />
