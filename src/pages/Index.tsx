@@ -68,6 +68,29 @@ const Index = () => {
     }
   };
 
+  const discoverBuilders = async () => {
+    setDiscovering(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("discover-builders");
+
+      if (error) {
+        toast.error("Failed to discover builders");
+        return;
+      }
+
+      if (data?.inserted_count > 0) {
+        toast.success(`Discovered ${data.inserted_count} new active builders!`);
+        fetchBuilders(); // reload the list
+      } else {
+        toast.info("No new active builders found right now.");
+      }
+    } catch {
+      toast.error("Failed to discover builders");
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
   useEffect(() => {
     fetchBuilders();
   }, []);
