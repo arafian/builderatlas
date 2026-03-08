@@ -147,12 +147,20 @@ const Index = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={discoverBuilders}
+              disabled={discovering}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:opacity-50"
+            >
+              <Search className={`h-3.5 w-3.5 ${discovering ? "animate-pulse" : ""}`} />
+              {discovering ? "Discovering…" : "Discover"}
+            </button>
+            <button
               onClick={refreshCommits}
               disabled={refreshing}
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:opacity-50"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-              {refreshing ? "Refreshing…" : "Refresh Commits"}
+              {refreshing ? "Refreshing…" : "Refresh"}
             </button>
             <AddBuilderDialog onAdd={handleAdd} />
           </div>
