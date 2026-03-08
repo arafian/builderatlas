@@ -13,6 +13,16 @@ function githubHeaders() {
   return h;
 }
 
+function mapLanguageToTag(lang: string | null): string {
+  if (!lang) return 'Open Source';
+  const map: Record<string, string> = {
+    Python: 'AI', TypeScript: 'Web', JavaScript: 'Web', Rust: 'Infra',
+    Go: 'Infra', C: 'Infra', 'C++': 'Infra', Java: 'Mobile',
+    Kotlin: 'Mobile', Swift: 'Mobile', Dart: 'Mobile', Ruby: 'Web',
+  };
+  return map[lang] || 'Open Source';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -20,80 +30,84 @@ Deno.serve(async (req) => {
 
   try {
     const gh = githubHeaders();
-    const commitCounts: Record<string, { username: string; commits: number }> = {};
 
-    // Fetch public events (with auth we get 5000 req/hour)
-    // GitHub only allows pages 1-3 for /events (max 300 events)
-    for (let page = 1; page <= 3; page++) {
-      const res = await fetch(
-        `https://api.github.com/events?per_page=100&page=${page}`,
-        { headers: gh }
-      );
-      if (!res.ok) {
-        console.error(`Events API page ${page}: ${res.status} - ${await res.text()}`);
-        break;
-      }
-      const events = await res.json();
-      if (!events.length) break;
+    // Step 1: Fetch top 3 trending repos (most starred, created in last 7 days)
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const searchRes = await fetch(
+      `https://api.github.com/search/repositories?q=created:>${oneWeekAgo}&sort=stars&order=desc&per_page=3`,
+      { headers: gh }
+    );
 
-      const pushEvents = events.filter((e: any) => e.type === 'PushEvent');
-      console.log(`Page ${page}: ${events.length} events, ${pushEvents.length} PushEvents`);
-      if (pushEvents.length > 0) {
-        console.log(`Sample PushEvent actors: ${pushEvents.slice(0, 5).map((e: any) => `${e.actor?.login}(size=${e.payload?.size},commits=${e.payload?.commits?.length},distinct=${e.payload?.distinct_size})`).join(', ')}`);
-      }
-
-      for (const event of pushEvents) {
-        const username = event.actor?.login;
-        if (!username || username.includes('[bot]') || username.endsWith('-bot')) continue;
-
-        if (!commitCounts[username]) {
-          commitCounts[username] = { username, commits: 0 };
-        }
-        commitCounts[username].commits += 1; // count push events, refine later
-      }
-    }
-
-    console.log(`Found ${Object.keys(commitCounts).length} unique committers`);
-
-    // Sort and take top 5
-    let topUsers = Object.values(commitCounts)
-      .sort((a, b) => b.commits - a.commits)
-      .slice(0, 5);
-
-    console.log('Top from events:', JSON.stringify(topUsers));
-
-    // For each user, get their full weekly commit count
-    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    for (const user of topUsers) {
-      try {
-        const eventsRes = await fetch(
-          `https://api.github.com/users/${user.username}/events/public?per_page=100`,
-          { headers: gh }
-        );
-        if (eventsRes.ok) {
-          const events = await eventsRes.json();
-          let realCommits = 0;
-          for (const event of events) {
-            if (event.type === 'PushEvent' && new Date(event.created_at) >= oneWeekAgo) {
-              realCommits += event.payload?.size || event.payload?.commits?.length || 0;
-            }
-          }
-          user.commits = Math.max(user.commits, realCommits);
-        }
-      } catch { /* keep original */ }
-    }
-
-    topUsers.sort((a, b) => b.commits - a.commits);
-    console.log('Final top users:', JSON.stringify(topUsers));
-
-    if (topUsers.length === 0) {
+    if (!searchRes.ok) {
+      const text = await searchRes.text();
+      console.error('Search API error:', searchRes.status, text);
       return new Response(
-        JSON.stringify({ success: true, top_users: [], inserted_count: 0, message: 'No PushEvents found in recent public timeline' }),
+        JSON.stringify({ success: false, error: `GitHub search failed: ${searchRes.status}` }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const searchData = await searchRes.json();
+    const repos = (searchData.items || []).slice(0, 3);
+    console.log('Trending repos:', repos.map((r: any) => `${r.full_name} (★${r.stargazers_count})`));
+
+    if (repos.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, repos: [], builders: [], message: 'No trending repos found' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Insert into database
+    // Step 2: For each repo, fetch top 5 contributors
+    const allBuilders: any[] = [];
+    const trendingRepos: any[] = [];
+
+    for (const repo of repos) {
+      const repoInfo = {
+        name: repo.full_name,
+        url: repo.html_url,
+        description: repo.description || '',
+        stars: repo.stargazers_count,
+        language: repo.language,
+      };
+      trendingRepos.push(repoInfo);
+
+      const contribRes = await fetch(
+        `https://api.github.com/repos/${repo.full_name}/contributors?per_page=10`,
+        { headers: gh }
+      );
+
+      if (!contribRes.ok) {
+        console.error(`Contributors for ${repo.full_name}: ${contribRes.status}`);
+        continue;
+      }
+
+      const contributors = await contribRes.json();
+      // Filter bots, take top 5
+      const humans = contributors
+        .filter((c: any) => c.type === 'User' && !c.login.includes('[bot]') && !c.login.endsWith('-bot') && !c.login.endsWith('bot'))
+        .slice(0, 5);
+
+      for (const c of humans) {
+        // Avoid duplicates across repos
+        if (allBuilders.some(b => b.username === c.login)) continue;
+
+        allBuilders.push({
+          username: c.login,
+          github_url: c.html_url,
+          avatar_url: c.avatar_url,
+          contributions: c.contributions,
+          source_repo: repo.full_name,
+          source_repo_url: repo.html_url,
+          description: `Top contributor to ${repo.full_name} (★${repo.stargazers_count})`,
+          tag: mapLanguageToTag(repo.language),
+        });
+      }
+    }
+
+    console.log(`Found ${allBuilders.length} builders from ${trendingRepos.length} repos`);
+
+    // Step 3: Clear existing builders and insert new ones
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const dbHeaders = {
@@ -102,47 +116,42 @@ Deno.serve(async (req) => {
       'Content-Type': 'application/json',
     };
 
-    const inserted = [];
-    for (const user of topUsers) {
-      const checkRes = await fetch(
-        `${supabaseUrl}/rest/v1/builders?github_url=eq.https://github.com/${user.username}&select=id`,
-        { headers: dbHeaders }
-      );
-      const existing = await checkRes.json();
+    // Delete all existing
+    await fetch(`${supabaseUrl}/rest/v1/builders?id=not.is.null`, {
+      method: 'DELETE',
+      headers: { ...dbHeaders, 'Prefer': 'return=minimal' },
+    });
 
-      if (existing.length > 0) {
-        await fetch(`${supabaseUrl}/rest/v1/builders?id=eq.${existing[0].id}`, {
-          method: 'PATCH',
-          headers: { ...dbHeaders, 'Prefer': 'return=minimal' },
-          body: JSON.stringify({
-            commits_per_week: user.commits,
-            commits_updated_at: new Date().toISOString(),
-          }),
-        });
-        continue;
-      }
-
+    // Insert new builders
+    let insertedCount = 0;
+    for (const b of allBuilders) {
       const insertRes = await fetch(`${supabaseUrl}/rest/v1/builders`, {
         method: 'POST',
-        headers: { ...dbHeaders, 'Prefer': 'return=representation' },
+        headers: { ...dbHeaders, 'Prefer': 'return=minimal' },
         body: JSON.stringify({
-          name: user.username,
-          github_url: `https://github.com/${user.username}`,
-          description: `Active open-source contributor with ${user.commits} commits this week`,
-          tags: ['open-source'],
-          commits_per_week: user.commits,
-          commits_updated_at: new Date().toISOString(),
+          name: b.username,
+          github_url: b.github_url,
+          project_url: b.source_repo_url,
+          description: b.description,
+          tags: [b.tag],
+          commits_per_week: b.contributions,
         }),
       });
 
       if (insertRes.ok) {
-        const data = await insertRes.json();
-        inserted.push(data[0]);
+        insertedCount++;
+      } else {
+        console.error(`Insert failed for ${b.username}:`, await insertRes.text());
       }
     }
 
     return new Response(
-      JSON.stringify({ success: true, top_users: topUsers, inserted_count: inserted.length }),
+      JSON.stringify({
+        success: true,
+        repos: trendingRepos,
+        builders: allBuilders,
+        inserted_count: insertedCount,
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
