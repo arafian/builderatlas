@@ -26,6 +26,7 @@ const Index = () => {
   const [sortMode, setSortMode] = useState<SortMode>("commits");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
 
   const fetchBuilders = async () => {
     const { data, error } = await supabase.from("builders").select("*");
