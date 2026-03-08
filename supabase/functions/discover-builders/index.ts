@@ -9,41 +9,42 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Fetch multiple pages of public GitHub events to find top committers
-    const commitCounts: Record<string, { username: string; commits: number; avatar: string }> = {};
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const dateStr = oneWeekAgo.toISOString().split('T')[0];
 
-    // Fetch several pages of public events
-    for (let page = 1; page <= 10; page++) {
+    // Use GitHub Search Commits API to find recent commits
+    // Search across popular repos to find active committers
+    const commitCounts: Record<string, { username: string; commits: number }> = {};
+
+    // Fetch a few pages of recent commits
+    for (let page = 1; page <= 5; page++) {
       const res = await fetch(
-        `https://api.github.com/events?per_page=100&page=${page}`,
+        `https://api.github.com/search/commits?q=committer-date:>${dateStr}&sort=committer-date&order=desc&per_page=100&page=${page}`,
         {
           headers: {
-            'Accept': 'application/vnd.github.v3+json',
+            'Accept': 'application/vnd.github.cloak-preview+json',
             'User-Agent': 'BuilderAtlas',
           },
         }
       );
-      if (!res.ok) break;
-      const events = await res.json();
-      if (!events.length) break;
 
-      for (const event of events) {
-        if (event.type !== 'PushEvent') continue;
-        if (new Date(event.created_at) < oneWeekAgo) continue;
+      if (!res.ok) {
+        console.error(`GitHub search API error: ${res.status} ${await res.text()}`);
+        break;
+      }
 
-        const username = event.actor?.login;
-        if (!username || username.includes('[bot]') || username.endsWith('-bot')) continue;
+      const data = await res.json();
+      if (!data.items?.length) break;
 
-        const numCommits = event.payload?.commits?.length || 0;
+      for (const item of data.items) {
+        const username = item.author?.login;
+        if (!username) continue;
+        if (username.includes('[bot]') || username.endsWith('-bot') || username.includes('bot')) continue;
+
         if (!commitCounts[username]) {
-          commitCounts[username] = {
-            username,
-            commits: 0,
-            avatar: event.actor?.avatar_url || '',
-          };
+          commitCounts[username] = { username, commits: 0 };
         }
-        commitCounts[username].commits += numCommits;
+        commitCounts[username].commits += 1;
       }
     }
 
@@ -52,7 +53,46 @@ Deno.serve(async (req) => {
       .sort((a, b) => b.commits - a.commits)
       .slice(0, 5);
 
-    console.log('Top users found:', topUsers.map(u => `${u.username}: ${u.commits}`));
+    console.log('Top users found:', JSON.stringify(topUsers));
+
+    if (topUsers.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, top_users: [], inserted_count: 0, message: 'No active committers found' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Now fetch real commit counts for each user from their events
+    for (const user of topUsers) {
+      try {
+        const eventsRes = await fetch(
+          `https://api.github.com/users/${user.username}/events/public?per_page=100`,
+          {
+            headers: {
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'BuilderAtlas',
+            },
+          }
+        );
+        if (eventsRes.ok) {
+          const events = await eventsRes.json();
+          let realCommits = 0;
+          for (const event of events) {
+            if (event.type === 'PushEvent' && new Date(event.created_at) >= oneWeekAgo) {
+              realCommits += event.payload?.commits?.length || 0;
+            }
+          }
+          if (realCommits > user.commits) {
+            user.commits = realCommits;
+          }
+        }
+      } catch {
+        // keep search count
+      }
+    }
+
+    // Re-sort after getting real counts
+    topUsers.sort((a, b) => b.commits - a.commits);
 
     // Insert into database
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -72,7 +112,6 @@ Deno.serve(async (req) => {
       );
       const existing = await checkRes.json();
       if (existing.length > 0) {
-        // Update commits
         await fetch(`${supabaseUrl}/rest/v1/builders?id=eq.${existing[0].id}`, {
           method: 'PATCH',
           headers: {
@@ -89,7 +128,6 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Insert new builder
       const insertRes = await fetch(`${supabaseUrl}/rest/v1/builders`, {
         method: 'POST',
         headers: {
