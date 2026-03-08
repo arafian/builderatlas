@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import BuilderCard from "@/components/BuilderCard";
 import AddBuilderDialog from "@/components/AddBuilderDialog";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpDown, GitCommit, RefreshCw } from "lucide-react";
+import { ArrowUpDown, GitCommit, RefreshCw, Search } from "lucide-react";
 import { AVAILABLE_TAGS } from "@/types/builder";
 import { toast } from "sonner";
 
