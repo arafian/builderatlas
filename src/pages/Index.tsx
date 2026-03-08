@@ -1,26 +1,87 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Builder } from "@/types/builder";
-import { sampleBuilders } from "@/data/sampleBuilders";
+import { supabase } from "@/integrations/supabase/client";
 import BuilderCard from "@/components/BuilderCard";
 import AddBuilderDialog from "@/components/AddBuilderDialog";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpDown } from "lucide-react";
 import { AVAILABLE_TAGS } from "@/types/builder";
+import { toast } from "sonner";
 
 type SortMode = "date" | "upvotes";
 
 const Index = () => {
-  const [builders, setBuilders] = useState<Builder[]>(sampleBuilders);
+  const [builders, setBuilders] = useState<Builder[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>("upvotes");
   const [activeTag, setActiveTag] = useState<string | null>(null);
 
-  const handleUpvote = (id: string) =>
-    setBuilders((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, upvotes: b.upvotes + 1 } : b))
-    );
+  useEffect(() => {
+    const fetchBuilders = async () => {
+      const { data, error } = await supabase
+        .from("builders")
+        .select("*");
+      if (error) {
+        toast.error("Failed to load builders");
+        return;
+      }
+      setBuilders(
+        (data || []).map((b) => ({
+          id: b.id,
+          name: b.name,
+          githubUrl: b.github_url || "",
+          projectUrl: b.project_url || "",
+          description: b.description || "",
+          tags: b.tags || [],
+          dateDiscovered: b.date_discovered,
+          upvotes: b.upvotes,
+        }))
+      );
+    };
+    fetchBuilders();
+  }, []);
 
-  const handleAdd = (builder: Builder) =>
-    setBuilders((prev) => [builder, ...prev]);
+  const handleUpvote = async (id: string) => {
+    const builder = builders.find((b) => b.id === id);
+    if (!builder) return;
+    const newUpvotes = builder.upvotes + 1;
+    setBuilders((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, upvotes: newUpvotes } : b))
+    );
+    await supabase.from("builders").update({ upvotes: newUpvotes }).eq("id", id);
+  };
+
+  const handleAdd = async (builder: Builder) => {
+    const { data, error } = await supabase
+      .from("builders")
+      .insert({
+        name: builder.name,
+        github_url: builder.githubUrl,
+        project_url: builder.projectUrl,
+        description: builder.description,
+        tags: builder.tags,
+        date_discovered: builder.dateDiscovered,
+      })
+      .select()
+      .single();
+    if (error) {
+      toast.error("Failed to add builder");
+      return;
+    }
+    setBuilders((prev) => [
+      {
+        id: data.id,
+        name: data.name,
+        githubUrl: data.github_url || "",
+        projectUrl: data.project_url || "",
+        description: data.description || "",
+        tags: data.tags || [],
+        dateDiscovered: data.date_discovered,
+        upvotes: data.upvotes,
+      },
+      ...prev,
+    ]);
+    toast.success("Builder submitted!");
+  };
 
   const filteredSorted = useMemo(() => {
     let list = activeTag
@@ -36,7 +97,6 @@ const Index = () => {
     return list;
   }, [builders, sortMode, activeTag]);
 
-  // "Top builders this week" — top 3 by upvotes
   const topThisWeek = useMemo(
     () => [...builders].sort((a, b) => b.upvotes - a.upvotes).slice(0, 3),
     [builders]
