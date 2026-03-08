@@ -19,56 +19,52 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const dateStr = oneWeekAgo.toISOString().split('T')[0];
     const gh = githubHeaders();
-
-    // Use GitHub Search Commits API with auth token
     const commitCounts: Record<string, { username: string; commits: number }> = {};
 
-    for (let page = 1; page <= 5; page++) {
+    // Fetch public events (with auth we get 5000 req/hour)
+    // GitHub only allows pages 1-3 for /events (max 300 events)
+    for (let page = 1; page <= 3; page++) {
       const res = await fetch(
-        `https://api.github.com/search/commits?q=committer-date:>${dateStr}&sort=committer-date&order=desc&per_page=100&page=${page}`,
-        { headers: { ...gh, 'Accept': 'application/vnd.github.cloak-preview+json' } }
+        `https://api.github.com/events?per_page=100&page=${page}`,
+        { headers: gh }
       );
-
       if (!res.ok) {
-        console.error(`GitHub search API page ${page}: ${res.status} ${await res.text()}`);
+        console.error(`Events API page ${page}: ${res.status} - ${await res.text()}`);
         break;
       }
+      const events = await res.json();
+      if (!events.length) break;
 
-      const data = await res.json();
-      if (!data.items?.length) break;
+      console.log(`Page ${page}: ${events.length} events, types: ${[...new Set(events.map((e: any) => e.type))].join(', ')}`);
 
-      for (const item of data.items) {
-        const username = item.author?.login;
-        if (!username) continue;
-        if (username.includes('[bot]') || username.endsWith('-bot') || username === 'dependabot' || username === 'renovate') continue;
+      for (const event of events) {
+        if (event.type !== 'PushEvent') continue;
+
+        const username = event.actor?.login;
+        if (!username || username.includes('[bot]') || username.endsWith('-bot')) continue;
+
+        const numCommits = event.payload?.size || event.payload?.commits?.length || 0;
+        if (numCommits === 0) continue;
 
         if (!commitCounts[username]) {
           commitCounts[username] = { username, commits: 0 };
         }
-        commitCounts[username].commits += 1;
+        commitCounts[username].commits += numCommits;
       }
     }
 
-    console.log(`Found ${Object.keys(commitCounts).length} unique committers from search`);
+    console.log(`Found ${Object.keys(commitCounts).length} unique committers`);
 
     // Sort and take top 5
-    const topUsers = Object.values(commitCounts)
+    let topUsers = Object.values(commitCounts)
       .sort((a, b) => b.commits - a.commits)
       .slice(0, 5);
 
-    console.log('Top users:', JSON.stringify(topUsers));
+    console.log('Top from events:', JSON.stringify(topUsers));
 
-    if (topUsers.length === 0) {
-      return new Response(
-        JSON.stringify({ success: true, top_users: [], inserted_count: 0 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get real weekly commit count from each user's events
+    // For each user, get their full weekly commit count
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     for (const user of topUsers) {
       try {
         const eventsRes = await fetch(
@@ -85,10 +81,18 @@ Deno.serve(async (req) => {
           }
           user.commits = Math.max(user.commits, realCommits);
         }
-      } catch { /* keep search count */ }
+      } catch { /* keep original */ }
     }
 
     topUsers.sort((a, b) => b.commits - a.commits);
+    console.log('Final top users:', JSON.stringify(topUsers));
+
+    if (topUsers.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, top_users: [], inserted_count: 0, message: 'No PushEvents found in recent public timeline' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Insert into database
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
