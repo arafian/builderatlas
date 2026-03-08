@@ -46,13 +46,10 @@ Deno.serve(async (req) => {
         const username = event.actor?.login;
         if (!username || username.includes('[bot]') || username.endsWith('-bot')) continue;
 
-        const numCommits = event.payload?.size || event.payload?.commits?.length || 0;
-        if (numCommits === 0) continue;
-
         if (!commitCounts[username]) {
           commitCounts[username] = { username, commits: 0 };
         }
-        commitCounts[username].commits += numCommits;
+        commitCounts[username].commits += 1; // count push events, refine later
       }
     }
 
