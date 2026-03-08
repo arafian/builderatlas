@@ -3,6 +3,7 @@ import { Builder } from "@/types/builder";
 import { supabase } from "@/integrations/supabase/client";
 import BuilderCard from "@/components/BuilderCard";
 import AddBuilderDialog from "@/components/AddBuilderDialog";
+import TrendingRepos, { TrendingRepo } from "@/components/TrendingRepos";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpDown, GitCommit, RefreshCw, Search } from "lucide-react";
 import { AVAILABLE_TAGS } from "@/types/builder";
@@ -27,6 +28,7 @@ const Index = () => {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [discovering, setDiscovering] = useState(false);
+  const [trendingRepos, setTrendingRepos] = useState<TrendingRepo[]>([]);
 
   const fetchBuilders = async () => {
     const { data, error } = await supabase.from("builders").select("*");
@@ -78,11 +80,15 @@ const Index = () => {
         return;
       }
 
+      if (data?.repos) {
+        setTrendingRepos(data.repos);
+      }
+
       if (data?.inserted_count > 0) {
-        toast.success(`Discovered ${data.inserted_count} new active builders!`);
-        fetchBuilders(); // reload the list
+        toast.success(`Imported ${data.inserted_count} builders from ${data.repos?.length || 0} trending repos!`);
+        fetchBuilders();
       } else {
-        toast.info("No new active builders found right now.");
+        toast.info("No new builders found.");
       }
     } catch {
       toast.error("Failed to discover builders");
@@ -152,7 +158,7 @@ const Index = () => {
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:opacity-50"
             >
               <Search className={`h-3.5 w-3.5 ${discovering ? "animate-pulse" : ""}`} />
-              {discovering ? "Discovering…" : "Discover"}
+              {discovering ? "Importing…" : "Import Trending"}
             </button>
             <button
               onClick={refreshCommits}
@@ -168,6 +174,11 @@ const Index = () => {
       </header>
 
       <main className="container py-8">
+        {/* Trending Repos */}
+        {trendingRepos.length > 0 && (
+          <TrendingRepos repos={trendingRepos} />
+        )}
+
         {/* Top Builders This Week */}
         <section className="mb-10">
           <h2 className="mb-4 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
@@ -236,7 +247,7 @@ const Index = () => {
         <div className="rounded-lg border border-border bg-background overflow-hidden">
           {filteredSorted.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-              No builders found for this filter.
+              No builders found. Click "Import Trending" to discover builders from GitHub.
             </div>
           ) : (
             filteredSorted.map((builder, i) => (
