@@ -1,6 +1,6 @@
 import { Builder } from "@/types/builder";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpRight, Github, ChevronUp } from "lucide-react";
+import { ArrowUpRight, Github, GitCommit } from "lucide-react";
 
 const TAG_COLORS: Record<string, string> = {
   AI: "bg-[hsl(var(--tag-ai))] text-[hsl(var(--tag-ai-foreground))]",
@@ -15,20 +15,16 @@ const getTagClass = (tag: string) =>
 interface BuilderCardProps {
   builder: Builder;
   index: number;
-  onUpvote: (id: string) => void;
 }
 
-const BuilderCard = ({ builder, index, onUpvote }: BuilderCardProps) => {
+const BuilderCard = ({ builder, index }: BuilderCardProps) => {
   return (
     <div className="group flex items-start gap-4 border-b border-border px-4 py-4 transition-colors hover:bg-card">
-      {/* Upvote */}
-      <button
-        onClick={() => onUpvote(builder.id)}
-        className="flex flex-col items-center gap-0.5 pt-0.5 text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronUp className="h-4 w-4" />
-        <span className="font-mono text-xs font-medium">{builder.upvotes}</span>
-      </button>
+      {/* Commits badge */}
+      <div className="flex flex-col items-center gap-0.5 pt-0.5 text-muted-foreground">
+        <GitCommit className="h-4 w-4" />
+        <span className="font-mono text-xs font-medium">{builder.commitsPerWeek}</span>
+      </div>
 
       {/* Index */}
       <span className="pt-0.5 font-mono text-sm text-muted-foreground">{index}.</span>

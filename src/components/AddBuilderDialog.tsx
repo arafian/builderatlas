@@ -36,7 +36,7 @@ const AddBuilderDialog = ({ onAdd }: AddBuilderDialogProps) => {
       description: description.trim(),
       tags: selectedTags,
       dateDiscovered: new Date().toISOString().split("T")[0],
-      upvotes: 0,
+      commitsPerWeek: 0,
     });
     setName("");
     setGithubUrl("");
@@ -59,12 +59,12 @@ const AddBuilderDialog = ({ onAdd }: AddBuilderDialogProps) => {
             Add a Builder
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            Submit a builder you've discovered.
+            Submit a builder you've discovered. GitHub commits will be fetched automatically.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
-          <Input placeholder="GitHub URL" value={githubUrl} onChange={(e) => setGithubUrl(e.target.value)} />
+          <Input placeholder="GitHub URL (e.g. https://github.com/username)" value={githubUrl} onChange={(e) => setGithubUrl(e.target.value)} />
           <Input placeholder="Project URL" value={projectUrl} onChange={(e) => setProjectUrl(e.target.value)} />
           <Input placeholder="Short description" value={description} onChange={(e) => setDescription(e.target.value)} />
           <div>
