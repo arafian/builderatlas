@@ -4,7 +4,7 @@ import { sampleBuilders } from "@/data/sampleBuilders";
 import BuilderCard from "@/components/BuilderCard";
 import AddBuilderDialog from "@/components/AddBuilderDialog";
 import { Badge } from "@/components/ui/badge";
-import { Radar, ArrowUpDown } from "lucide-react";
+import { ArrowUpDown } from "lucide-react";
 import { AVAILABLE_TAGS } from "@/types/builder";
 
 type SortMode = "date" | "upvotes";
