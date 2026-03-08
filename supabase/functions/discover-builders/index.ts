@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
       const pushEvents = events.filter((e: any) => e.type === 'PushEvent');
       console.log(`Page ${page}: ${events.length} events, ${pushEvents.length} PushEvents`);
       if (pushEvents.length > 0) {
-        console.log(`Sample PushEvent actors: ${pushEvents.slice(0, 5).map((e: any) => `${e.actor?.login}(${e.payload?.size || e.payload?.commits?.length || 0})`).join(', ')}`);
+        console.log(`Sample PushEvent actors: ${pushEvents.slice(0, 5).map((e: any) => `${e.actor?.login}(size=${e.payload?.size},commits=${e.payload?.commits?.length},distinct=${e.payload?.distinct_size})`).join(', ')}`);
       }
 
       for (const event of pushEvents) {
