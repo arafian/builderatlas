@@ -1,0 +1,1 @@
+DELETE FROM public.builders WHERE id IN ('25ab95d5-7dd7-4d6c-ae1d-a4171e0fedc9', 'bd43ae29-9797-4229-b6a7-df1b74c6f92d');
