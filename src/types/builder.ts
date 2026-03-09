@@ -7,6 +7,7 @@ export interface Builder {
   tags: string[];
   dateDiscovered: string;
   commitsPerWeek: number;
+  score: number;
 }
 
 export const AVAILABLE_TAGS = [

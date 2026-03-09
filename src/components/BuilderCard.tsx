@@ -61,6 +61,9 @@ const BuilderCard = ({ builder, index }: BuilderCardProps) => {
               {tag}
             </Badge>
           ))}
+          <span className="ml-auto inline-flex items-center gap-1 font-mono text-xs text-primary font-medium">
+            <Trophy className="h-3 w-3" /> {builder.score.toFixed(2)}
+          </span>
           <span className="font-mono text-[11px] text-muted-foreground">
             {new Date(builder.dateDiscovered).toLocaleDateString("en-US", {
               month: "short",
