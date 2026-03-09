@@ -25,6 +25,7 @@ export type Database = {
           id: string
           name: string
           project_url: string | null
+          score: number | null
           tags: string[] | null
           upvotes: number
         }
@@ -38,6 +39,7 @@ export type Database = {
           id?: string
           name: string
           project_url?: string | null
+          score?: number | null
           tags?: string[] | null
           upvotes?: number
         }
@@ -51,6 +53,7 @@ export type Database = {
           id?: string
           name?: string
           project_url?: string | null
+          score?: number | null
           tags?: string[] | null
           upvotes?: number
         }

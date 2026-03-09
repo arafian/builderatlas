@@ -5,11 +5,11 @@ import BuilderCard from "@/components/BuilderCard";
 import AddBuilderDialog from "@/components/AddBuilderDialog";
 import TrendingRepos, { TrendingRepo } from "@/components/TrendingRepos";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpDown, GitCommit, RefreshCw, Search } from "lucide-react";
+import { ArrowUpDown, RefreshCw, Search, Trophy } from "lucide-react";
 import { AVAILABLE_TAGS } from "@/types/builder";
 import { toast } from "sonner";
 
-type SortMode = "commits" | "date";
+type SortMode = "score" | "commits" | "date";
 
 const mapBuilder = (b: any): Builder => ({
   id: b.id,
@@ -20,11 +20,12 @@ const mapBuilder = (b: any): Builder => ({
   tags: b.tags || [],
   dateDiscovered: b.date_discovered,
   commitsPerWeek: b.commits_per_week || 0,
+  score: b.score || 0,
 });
 
 const Index = () => {
   const [builders, setBuilders] = useState<Builder[]>([]);
-  const [sortMode, setSortMode] = useState<SortMode>("commits");
+  const [sortMode, setSortMode] = useState<SortMode>("score");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [discovering, setDiscovering] = useState(false);
@@ -122,6 +123,11 @@ const Index = () => {
     toast.success("Builder submitted!");
   };
 
+  const nextSort = (current: SortMode): SortMode => {
+    const order: SortMode[] = ["score", "commits", "date"];
+    return order[(order.indexOf(current) + 1) % order.length];
+  };
+
   const filteredSorted = useMemo(() => {
     let list = activeTag
       ? builders.filter((b) => b.tags.includes(activeTag))
@@ -130,14 +136,16 @@ const Index = () => {
       list = [...list].sort(
         (a, b) => new Date(b.dateDiscovered).getTime() - new Date(a.dateDiscovered).getTime()
       );
-    } else {
+    } else if (sortMode === "commits") {
       list = [...list].sort((a, b) => b.commitsPerWeek - a.commitsPerWeek);
+    } else {
+      list = [...list].sort((a, b) => b.score - a.score);
     }
     return list;
   }, [builders, sortMode, activeTag]);
 
-  const topThisWeek = useMemo(
-    () => [...builders].sort((a, b) => b.commitsPerWeek - a.commitsPerWeek).slice(0, 3),
+  const topBuilders = useMemo(
+    () => [...builders].sort((a, b) => b.score - a.score).slice(0, 3),
     [builders]
   );
 
@@ -174,18 +182,17 @@ const Index = () => {
       </header>
 
       <main className="container py-8">
-        {/* Trending Repos */}
         {trendingRepos.length > 0 && (
           <TrendingRepos repos={trendingRepos} />
         )}
 
-        {/* Top Builders This Week */}
+        {/* Emerging Builders This Week */}
         <section className="mb-10">
           <h2 className="mb-4 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            🔥 Most Active Builders This Week
+            🚀 Emerging Builders This Week
           </h2>
           <div className="grid gap-3 sm:grid-cols-3">
-            {topThisWeek.map((builder, i) => (
+            {topBuilders.map((builder, i) => (
               <div
                 key={builder.id}
                 className="rounded-lg border border-border bg-card p-4 transition-shadow hover:shadow-md"
@@ -193,6 +200,9 @@ const Index = () => {
                 <div className="flex items-center gap-2 mb-2">
                   <span className="font-mono text-lg font-bold text-primary">#{i + 1}</span>
                   <span className="font-semibold text-foreground">{builder.name}</span>
+                  <span className="ml-auto inline-flex items-center gap-1 font-mono text-xs text-primary font-medium">
+                    <Trophy className="h-3 w-3" /> {builder.score.toFixed(2)}
+                  </span>
                 </div>
                 <p className="text-sm text-muted-foreground line-clamp-2">{builder.description}</p>
                 <div className="mt-2 flex items-center gap-1.5 flex-wrap">
@@ -201,9 +211,6 @@ const Index = () => {
                       {tag}
                     </Badge>
                   ))}
-                  <span className="ml-auto inline-flex items-center gap-1 font-mono text-xs text-primary font-medium">
-                    <GitCommit className="h-3 w-3" /> {builder.commitsPerWeek}/wk
-                  </span>
                 </div>
               </div>
             ))}
@@ -214,11 +221,11 @@ const Index = () => {
         <div className="mb-4 flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => setSortMode(sortMode === "date" ? "commits" : "date")}
+              onClick={() => setSortMode(nextSort(sortMode))}
               className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
             >
               <ArrowUpDown className="h-3 w-3" />
-              {sortMode === "date" ? "by date" : "by commits"}
+              by {sortMode}
             </button>
           </div>
           <div className="h-4 w-px bg-border" />

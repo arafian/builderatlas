@@ -1,6 +1,6 @@
 import { Builder } from "@/types/builder";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpRight, Github, GitCommit } from "lucide-react";
+import { ArrowUpRight, Github, GitCommit, Trophy } from "lucide-react";
 
 const TAG_COLORS: Record<string, string> = {
   AI: "bg-[hsl(var(--tag-ai))] text-[hsl(var(--tag-ai-foreground))]",
@@ -61,6 +61,9 @@ const BuilderCard = ({ builder, index }: BuilderCardProps) => {
               {tag}
             </Badge>
           ))}
+          <span className="ml-auto inline-flex items-center gap-1 font-mono text-xs text-primary font-medium">
+            <Trophy className="h-3 w-3" /> {builder.score.toFixed(2)}
+          </span>
           <span className="font-mono text-[11px] text-muted-foreground">
             {new Date(builder.dateDiscovered).toLocaleDateString("en-US", {
               month: "short",

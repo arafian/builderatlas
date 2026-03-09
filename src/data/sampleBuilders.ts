@@ -10,6 +10,7 @@ export const sampleBuilders: Builder[] = [
     tags: ["AI", "Open Source", "Web"],
     dateDiscovered: "2026-03-08",
     commitsPerWeek: 0,
+    score: 0,
   },
   {
     id: "2",
@@ -20,6 +21,7 @@ export const sampleBuilders: Builder[] = [
     tags: ["Infra", "CLI", "DevTools"],
     dateDiscovered: "2026-03-07",
     commitsPerWeek: 0,
+    score: 0,
   },
   {
     id: "3",
@@ -30,6 +32,7 @@ export const sampleBuilders: Builder[] = [
     tags: ["Robotics", "Open Source"],
     dateDiscovered: "2026-03-06",
     commitsPerWeek: 0,
+    score: 0,
   },
   {
     id: "4",
@@ -40,6 +43,7 @@ export const sampleBuilders: Builder[] = [
     tags: ["Data", "Infra", "Open Source"],
     dateDiscovered: "2026-03-05",
     commitsPerWeek: 0,
+    score: 0,
   },
   {
     id: "5",
@@ -50,5 +54,6 @@ export const sampleBuilders: Builder[] = [
     tags: ["Security", "DevTools"],
     dateDiscovered: "2026-03-08",
     commitsPerWeek: 0,
+    score: 0,
   },
 ];

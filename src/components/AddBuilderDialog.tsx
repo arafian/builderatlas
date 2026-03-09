@@ -37,6 +37,7 @@ const AddBuilderDialog = ({ onAdd }: AddBuilderDialogProps) => {
       tags: selectedTags,
       dateDiscovered: new Date().toISOString().split("T")[0],
       commitsPerWeek: 0,
+      score: 0,
     });
     setName("");
     setGithubUrl("");
