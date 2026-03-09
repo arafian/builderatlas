@@ -38,8 +38,9 @@ function parseTrendingHtml(html: string) {
     const langMatch = chunk.match(/itemprop="programmingLanguage"[^>]*>([^<]+)</);
     const language = langMatch ? langMatch[1].trim() : null;
 
-    // Extract total stars from stargazers link
-    const starsMatch = chunk.match(/\/stargazers[^>]*>\s*([\d,]+)\s*<\/a>/s);
+    // Extract total stars - try multiple patterns
+    const starsMatch = chunk.match(/\/stargazers"[^>]*>\s*(?:<[^>]*>)?\s*([\d,]+)\s*(?:<[^>]*>)?\s*<\/a>/s)
+      || chunk.match(/href="[^"]*\/stargazers"[^>]*>([\s\S]*?)<\/a>/s);
     const stars = starsMatch ? parseInt(starsMatch[1].replace(/,/g, ''), 10) : 0;
 
     // Extract stars today/this week
