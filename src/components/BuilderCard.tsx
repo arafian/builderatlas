@@ -1,6 +1,6 @@
 import { Builder } from "@/types/builder";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpRight, Github, GitCommit } from "lucide-react";
+import { ArrowUpRight, Github, GitCommit, Trophy } from "lucide-react";
 
 const TAG_COLORS: Record<string, string> = {
   AI: "bg-[hsl(var(--tag-ai))] text-[hsl(var(--tag-ai-foreground))]",
