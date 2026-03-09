@@ -6,7 +6,7 @@ const corsHeaders = {
 function githubHeaders() {
   const token = Deno.env.get('BUILDER_ATLAS_PERSONAL_ACCESS_TOKEN');
   const h: Record<string, string> = {
-    'Accept': 'application/vnd.github.v3+json',
+    'Accept': 'text/html',
     'User-Agent': 'BuilderAtlas',
   };
   if (token) h['Authorization'] = `Bearer ${token}`;
@@ -23,33 +23,92 @@ function mapLanguageToTag(lang: string | null): string {
   return map[lang] || 'Open Source';
 }
 
+function parseTrendingHtml(html: string) {
+  const repos: any[] = [];
+
+  // Match repo articles - each trending repo is in an <article> or similar block
+  // Pattern: owner/repo links like href="/owner/repo"
+  const repoPattern = /class="Box-row"[^>]*>[\s\S]*?<\/article>/gi;
+  // Simpler: split by repo entries
+  const rows = html.split(/class="Box-row"/);
+
+  for (const row of rows.slice(1)) { // skip first split part (before first repo)
+    // Extract repo full name: href="/owner/repo"
+    const nameMatch = row.match(/href="\/([^"]+?)"[^>]*>\s*<span[^>]*>([^<]+)<\/span>\s*\/\s*<span[^>]*>([^<]+)<\/span>/s);
+    if (!nameMatch) continue;
+
+    const fullName = `${nameMatch[2].trim()}/${nameMatch[3].trim()}`;
+    const url = `https://github.com/${fullName}`;
+
+    // Extract description
+    const descMatch = row.match(/<p[^>]*class="[^"]*col-9[^"]*"[^>]*>([\s\S]*?)<\/p>/);
+    const description = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+    // Extract language
+    const langMatch = row.match(/itemprop="programmingLanguage"[^>]*>([^<]+)</);
+    const language = langMatch ? langMatch[1].trim() : null;
+
+    // Extract total stars - look for /stargazers link with number
+    const starsMatch = row.match(/href="\/[^"]+\/stargazers"[^>]*>\s*([\d,]+)\s*<\/a>/s);
+    const stars = starsMatch ? parseInt(starsMatch[1].replace(/,/g, ''), 10) : 0;
+
+    // Extract stars today
+    const todayMatch = row.match(/([\d,]+)\s*stars?\s*today/i);
+    const starsToday = todayMatch ? parseInt(todayMatch[1].replace(/,/g, ''), 10) : 0;
+
+    // Extract built-by contributors
+    const builtBySection = row.match(/Built by([\s\S]*?)(?:\d+\s*stars?\s*today|$)/i);
+    const contributors: any[] = [];
+    if (builtBySection) {
+      const avatarPattern = /href="\/([^"\/]+)"[^>]*>\s*<img[^>]*src="(https:\/\/avatars\.githubusercontent\.com\/[^"?]+)/g;
+      let m;
+      while ((m = avatarPattern.exec(builtBySection[1])) !== null) {
+        const login = m[1];
+        // Skip bots and app links
+        if (login.includes('apps/') || login.includes('[bot]') || login.endsWith('-bot') || login === 'dependabot') continue;
+        contributors.push({
+          login,
+          avatar_url: m[2],
+        });
+      }
+    }
+
+    repos.push({
+      fullName,
+      url,
+      description,
+      language,
+      stars,
+      starsToday,
+      contributors,
+    });
+  }
+
+  return repos;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const gh = githubHeaders();
+    // Fetch GitHub's actual trending page
+    const trendingRes = await fetch('https://github.com/trending', {
+      headers: githubHeaders(),
+    });
 
-    // Step 1: Fetch top 3 trending repos (most starred, created in last 7 days)
-    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const searchRes = await fetch(
-      `https://api.github.com/search/repositories?q=created:>${oneWeekAgo}&sort=stars&order=desc&per_page=3`,
-      { headers: gh }
-    );
-
-    if (!searchRes.ok) {
-      const text = await searchRes.text();
-      console.error('Search API error:', searchRes.status, text);
+    if (!trendingRes.ok) {
+      console.error('Failed to fetch trending page:', trendingRes.status);
       return new Response(
-        JSON.stringify({ success: false, error: `GitHub search failed: ${searchRes.status}` }),
+        JSON.stringify({ success: false, error: `Failed to fetch trending page: ${trendingRes.status}` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const searchData = await searchRes.json();
-    const repos = (searchData.items || []).slice(0, 3);
-    console.log('Trending repos:', repos.map((r: any) => `${r.full_name} (★${r.stargazers_count})`));
+    const html = await trendingRes.text();
+    const repos = parseTrendingHtml(html).slice(0, 10); // top 10 trending
+    console.log('Parsed trending repos:', repos.map(r => `${r.fullName} (★${r.stars}, +${r.starsToday} today)`));
 
     if (repos.length === 0) {
       return new Response(
@@ -58,56 +117,40 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Step 2: For each repo, fetch top 5 contributors
+    // Collect unique builders from contributors
     const allBuilders: any[] = [];
     const trendingRepos: any[] = [];
+    const seen = new Set<string>();
 
     for (const repo of repos) {
-      const repoInfo = {
-        name: repo.full_name,
-        url: repo.html_url,
-        description: repo.description || '',
-        stars: repo.stargazers_count,
+      trendingRepos.push({
+        name: repo.fullName,
+        url: repo.url,
+        description: repo.description,
+        stars: repo.stars,
         language: repo.language,
-      };
-      trendingRepos.push(repoInfo);
+        starsToday: repo.starsToday,
+      });
 
-      const contribRes = await fetch(
-        `https://api.github.com/repos/${repo.full_name}/contributors?per_page=10`,
-        { headers: gh }
-      );
-
-      if (!contribRes.ok) {
-        console.error(`Contributors for ${repo.full_name}: ${contribRes.status}`);
-        continue;
-      }
-
-      const contributors = await contribRes.json();
-      // Filter bots, take top 5
-      const humans = contributors
-        .filter((c: any) => c.type === 'User' && !c.login.includes('[bot]') && !c.login.endsWith('-bot') && !c.login.endsWith('bot'))
-        .slice(0, 5);
-
-      for (const c of humans) {
-        // Avoid duplicates across repos
-        if (allBuilders.some(b => b.username === c.login)) continue;
+      for (const c of repo.contributors) {
+        if (seen.has(c.login)) continue;
+        seen.add(c.login);
 
         allBuilders.push({
           username: c.login,
-          github_url: c.html_url,
+          github_url: `https://github.com/${c.login}`,
           avatar_url: c.avatar_url,
-          contributions: c.contributions,
-          source_repo: repo.full_name,
-          source_repo_url: repo.html_url,
-          description: `Top contributor to ${repo.full_name} (★${repo.stargazers_count})`,
+          source_repo: repo.fullName,
+          source_repo_url: repo.url,
+          description: `Top contributor to ${repo.fullName} (★${repo.stars.toLocaleString()}, +${repo.starsToday} today)`,
           tag: mapLanguageToTag(repo.language),
         });
       }
     }
 
-    console.log(`Found ${allBuilders.length} builders from ${trendingRepos.length} repos`);
+    console.log(`Found ${allBuilders.length} builders from ${trendingRepos.length} trending repos`);
 
-    // Step 3: Clear existing builders and insert new ones
+    // Clear existing builders and insert new ones
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const dbHeaders = {
@@ -116,13 +159,11 @@ Deno.serve(async (req) => {
       'Content-Type': 'application/json',
     };
 
-    // Delete all existing
     await fetch(`${supabaseUrl}/rest/v1/builders?id=not.is.null`, {
       method: 'DELETE',
       headers: { ...dbHeaders, 'Prefer': 'return=minimal' },
     });
 
-    // Insert new builders
     let insertedCount = 0;
     for (const b of allBuilders) {
       const insertRes = await fetch(`${supabaseUrl}/rest/v1/builders`, {
@@ -134,7 +175,7 @@ Deno.serve(async (req) => {
           project_url: b.source_repo_url,
           description: b.description,
           tags: [b.tag],
-          commits_per_week: b.contributions,
+          commits_per_week: 0,
         }),
       });
 
