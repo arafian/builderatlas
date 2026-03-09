@@ -41,7 +41,8 @@ function parseTrendingHtml(html: string) {
     // Extract total stars - try multiple patterns
     const starsMatch = chunk.match(/\/stargazers"[^>]*>\s*(?:<[^>]*>)?\s*([\d,]+)\s*(?:<[^>]*>)?\s*<\/a>/s)
       || chunk.match(/href="[^"]*\/stargazers"[^>]*>([\s\S]*?)<\/a>/s);
-    const stars = starsMatch ? parseInt(starsMatch[1].replace(/,/g, ''), 10) : 0;
+    const starsText = starsMatch ? starsMatch[1].replace(/<[^>]+>/g, '').trim() : '0';
+    const stars = parseInt(starsText.replace(/,/g, ''), 10) || 0;
 
     // Extract stars today/this week
     const todayMatch = chunk.match(/([\d,]+)\s*stars?\s*(today|this\s*week|this\s*month)/i);
