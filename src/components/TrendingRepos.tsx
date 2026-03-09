@@ -6,6 +6,7 @@ export interface TrendingRepo {
   description: string;
   stars: number;
   language: string | null;
+  starsToday?: number;
 }
 
 interface TrendingReposProps {
@@ -40,6 +41,9 @@ const TrendingRepos = ({ repos }: TrendingReposProps) => {
               <span className="inline-flex items-center gap-1 font-mono font-medium text-primary">
                 <Star className="h-3 w-3" /> {repo.stars.toLocaleString()}
               </span>
+              {repo.starsToday ? (
+                <span className="font-mono text-primary/70">+{repo.starsToday.toLocaleString()} today</span>
+              ) : null}
               {repo.language && (
                 <span className="font-mono">{repo.language}</span>
               )}
