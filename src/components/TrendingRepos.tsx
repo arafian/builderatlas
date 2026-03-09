@@ -6,6 +6,7 @@ export interface TrendingRepo {
   description: string;
   stars: number;
   language: string | null;
+  starsToday?: number;
 }
 
 interface TrendingReposProps {
